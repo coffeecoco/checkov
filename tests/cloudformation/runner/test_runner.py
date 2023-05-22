@@ -12,6 +12,8 @@ from parameterized import parameterized_class
 from checkov.cloudformation.checks.resource.registry import cfn_registry
 from checkov.cloudformation import cfn_utils
 from checkov.cloudformation.checks.resource.base_resource_check import BaseResourceCheck
+from checkov.cloudformation.checks.resource.base_resource_value_check import BaseResourceValueCheck
+from checkov.cloudformation.checks.resource.base_resource_negative_value_check import BaseResourceNegativeValueCheck
 from checkov.cloudformation.parser import parse
 from checkov.common.bridgecrew.check_type import CheckType
 from checkov.common.bridgecrew.severities import BcSeverities, Severities
@@ -157,6 +159,68 @@ class TestRunnerValid(unittest.TestCase):
 
         self.assertEqual(report.failed_checks[0].guideline, custom_guideline_url)
 
+    def test_record_includes_custom_guideline2(self):
+        custom_guideline_url = "https://my.custom.url"
+        custom_check_id = "MY_CUSTOM_CHECK"
+
+        cfn_registry.checks = defaultdict(list)
+
+        class AnyFailingCheck(BaseResourceValueCheck):
+            def __init__(self, *_, **__) -> None:
+                super().__init__(
+                    "this should fail",
+                    custom_check_id,
+                    [CheckCategories.ENCRYPTION],
+                    ["AWS::SQS::Queue"],
+                    guideline=custom_guideline_url
+                )
+
+            def get_inspected_key(self):
+                return 'Properties/CacheClusterEnabled'
+
+        AnyFailingCheck()
+        scan_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "resources", "fail.yaml")
+
+        report = Runner(db_connector=self.db_connector()).run(
+            None,
+            files=[scan_file_path],
+            runner_filter=RunnerFilter(framework='cloudformation', checks=[custom_check_id])
+        )
+
+        self.assertEqual(report.failed_checks[0].guideline, custom_guideline_url)
+
+    def test_record_includes_custom_guideline3(self):
+        custom_guideline_url = "https://my.custom.url"
+        custom_check_id = "MY_CUSTOM_CHECK"
+
+        cfn_registry.checks = defaultdict(list)
+
+        class AnyFailingCheck(BaseResourceNegativeValueCheck):
+            def __init__(self, *_, **__) -> None:
+                super().__init__(
+                    "this should fail",
+                    custom_check_id,
+                    [CheckCategories.ENCRYPTION],
+                    ["AWS::SQS::Queue"],
+                    guideline=custom_guideline_url
+                )
+
+            def get_inspected_key(self):
+                return "Properties/QueueName"
+
+            def get_forbidden_values(self):
+                return ["any"]
+
+        AnyFailingCheck()
+        scan_file_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "resources", "fail.yaml")
+
+        report = Runner(db_connector=self.db_connector()).run(
+            None,
+            files=[scan_file_path],
+            runner_filter=RunnerFilter(framework='cloudformation', checks=[custom_check_id])
+        )
+
+        self.assertEqual(report.failed_checks[0].guideline, custom_guideline_url)
     def test_get_tags(self):
         current_dir = os.path.dirname(os.path.realpath(__file__))
         scan_file_path = os.path.join(current_dir, "resources", "tags.yaml")
